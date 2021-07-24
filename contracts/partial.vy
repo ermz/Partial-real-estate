@@ -71,8 +71,8 @@ def __init__():
 
 @external
 @payable
-def managment_access() -> bool:
-    assert msg.value == 1, "You must pay 1 ether in order for your company to be included"
+def management_access() -> bool:
+    assert msg.value >= 1, "You must pay 1 ether in order for your company to be included"
     assert self.managementList[msg.sender] == False
 
     self.managementList[msg.sender] = True
@@ -91,12 +91,17 @@ def approve_broker(broker: address) -> address:
 @external
 @payable
 def approve_agent(agent: address) -> address:
-    assert msg.value == 1, "You must pay 1 ether in order for your company to be included"
+    assert msg.value >= 1, "You must pay 1 ether in order for your company to be included"
     assert self.brokerList[msg.sender] == True, "You don't work with any of our partnered management companies"
     assert self.agentToBroker[agent] != msg.sender, "This agent is already partnered with you"
 
     self.agentToBroker[agent] = msg.sender
     return agent
+
+@external
+@view
+def validate_management(management: address) -> bool:
+    return self.managementList[management]
 
 # From the POV of a super/management company/ whoever to give access to keys/whatever for entry
 @external
@@ -111,19 +116,21 @@ def validate_agent(agent: address, management: address) -> bool:
     broker_addr: address = self.agentToBroker[agent]
     return self.brokerToManagement[broker_addr][management]
 
-ownerExclusiveListing: HashMap[uint256, address]
+ownerExclusiveListing: HashMap[bytes32, address]
 
 struct ExclusiveListing:
     streetName: String[100]
     price: uint256
 
-exclusivePassToStruct: HashMap[uint256, ExclusiveListing]
+exclusivePassToStruct: HashMap[bytes32, ExclusiveListing]
 
-approveExclusiveListing: HashMap[uint256, HashMap[address, bool]]
+approveExclusiveListing: HashMap[bytes32, HashMap[address, bool]]
 
 @external
-def add_listing(_listing_id: String[32], _streetName: String[100], _price: uint256) -> uint256:
-    listing_password: uint256 = convert(keccak256(_listing_id), uint256)
+@payable
+def add_listing(_listing_id: String[32], _streetName: String[100], _price: uint256) -> bytes32:
+    assert msg.value >= 2, "You must pay 2 ether to add your exclusive listing"
+    listing_password: bytes32 = keccak256(_listing_id)
     # Will have to re-do this part. There's too much querying for something so simple
     assert self.ownerExclusiveListing[listing_password] != msg.sender
     self.ownerExclusiveListing[listing_password] = msg.sender
@@ -133,19 +140,36 @@ def add_listing(_listing_id: String[32], _streetName: String[100], _price: uint2
     })
     return listing_password
 
+@external
+@view
+def view_exclusive_owner(list_password: bytes32) -> address:
+    return self.ownerExclusiveListing[list_password]
+
+@external
+@view
+def view_exclusive_pass_struct(list_password: bytes32) -> ExclusiveListing:
+    return self.exclusivePassToStruct[list_password]
+
+@external
+@view
+def view_approve_exclusive(list_password: bytes32, broker: address) -> bool:
+    return self.approveExclusiveListing[list_password][broker]
+    
+
 # Specifically for Individual trying to give access to Real Estate Brokers/Agents
 # management companies will have a separate process for real estate brokers/agents
 @external
-def approve_exclusive(listing_password: uint256, broker: address) -> address:
+def approve_exclusive(listing_password: bytes32, broker: address) -> address:
     assert self.brokerList[broker] == True, "This broker is not partnered with any of our management companies, be wary"
     assert self.approveExclusiveListing[listing_password][broker] == False, "This broker is already on the Exclusive listing"
+    self.approveExclusiveListing[listing_password][broker] = True
     return msg.sender
 
 # The idea now is that the management company gives the Broker the listing password so he can access the information
 # will have a struct that details the exclusive listing only to those specific brokers and grant them access
 @external
 @view
-def view_exclusive(listing_password: uint256) -> ExclusiveListing:
+def view_exclusive(listing_password: bytes32) -> ExclusiveListing:
     assert self.brokerList[msg.sender] == True, "You are not partnered with any of our management companies or independent landlords"
     return self.exclusivePassToStruct[listing_password]
 
